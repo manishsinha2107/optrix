@@ -1,0 +1,22 @@
+# requirements.txt
+# ============================================================
+# Dependencies for the Exit Optimiser engine.
+# Pin minor versions for reproducibility — patch versions
+# are allowed to float so security fixes apply automatically.
+# ============================================================
+
+# Supabase Python client
+# Used in db_loader.py and db_writer.py
+supabase>=2.3,<3.0
+
+# Bayesian optimisation engine
+# Used in optimiser.py
+optuna>=3.5,<4.0
+
+# HTTP client used by supabase-py internally
+# Pinned to avoid breaking changes
+httpx>=0.27,<0.28
+
+# Standard scientific stack
+# numpy used for float precision in reward normalisation
+numpy>=1.26,<2.0
