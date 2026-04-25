@@ -1,0 +1,91 @@
+# .github/workflows/run.yml
+# ============================================================
+# GitHub Actions workflow for the Exit Optimiser engine.
+#
+# Triggers:
+#   1. Scheduled — every Sunday at 6:00 AM IST (00:30 UTC)
+#   2. Manual — workflow_dispatch allows you to trigger
+#      a run at any time from the GitHub Actions UI.
+#
+# HORIZONTAL SCALING:
+#   This workflow uses a matrix strategy to split the workload 
+#   across 10 concurrent Linux runners, dramatically reducing 
+#   execution time.
+# ============================================================
+
+name: Exit Optimiser
+
+on:
+
+  # allow manual trigger from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for manual run (optional)"
+        required: false
+        default: "Manual trigger"
+
+jobs:
+  optimise:
+    name: Run exit optimiser (Chunk ${{ matrix.chunk }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120      # Reduced timeout since each machine only processes ~5 strategies
+    
+    # ---- HORIZONTAL SCALING MATRIX ----
+    # This instructs GitHub to launch 10 independent servers simultaneously.
+    # fail-fast is false so if Chunk 3 crashes, Chunks 1-2 and 4-10 keep running.
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+    steps:
+
+      # ---- 1. checkout repo --------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ---- 2. set up Python --------------------------------
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # ---- 3. install dependencies -------------------------
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # ---- 4. run the optimiser chunk ----------------------
+      # Passes the matrix variables to main.py
+      - name: Run exit optimiser chunk
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          python main.py --chunk ${{ matrix.chunk }} --total-chunks 10
+
+      # ---- 5. upload run log as artifact -------------------
+      # Added matrix.chunk to the artifact name so the 10 logs 
+      # do not overwrite each other.
+      - name: Upload run log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: optimiser-log-chunk-${{ matrix.chunk }}-${{ github.run_id }}
+          path: optimiser_run_chunk*.log
+          retention-days: 30
+
+      # ---- 6. notify on failure ----------------------------
+      - name: Summarise result
+        if: always()
+        run: |
+          if [ ${{ job.status }} == 'success' ]; then
+            echo "### Exit Optimiser Chunk ${{ matrix.chunk }} completed successfully" \
+              >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Exit Optimiser Chunk ${{ matrix.chunk }} failed — check log artifact" \
+              >> $GITHUB_STEP_SUMMARY
+          fi
