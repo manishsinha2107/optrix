@@ -131,9 +131,9 @@ UNIVERSAL_EXIT_TIMES: List[str] = [
 # OPTUNA SETTINGS
 # ============================================================
 
-OPTUNA_TRIALS:      int = 2500    # total trials per strategy per run
+OPTUNA_TRIALS:      int = 2000    # total trials per strategy per run
                                    # (tight bounds mean TPE converges
-                                   #  by ~1000 trials — 2500 gives margin)
+                                   #  by ~1000 trials — 2000 gives margin)
 OPTUNA_TIMEOUT_SEC: int = 420     # max seconds per strategy (5 min)
 OPTUNA_SAMPLER:     str = "TPE"   # TPE = Tree-structured Parzen Estimator
 
