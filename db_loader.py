@@ -301,14 +301,9 @@ def load_pnl_for_la_strategy(
 ) -> dict[str, list[Candle]]:
     """
     Load PNL data for the Live Auto strategy linked via
-    la_mapping_id.
-
-    la_mapping_id in the strategies table contains the
-    strategy_id of the Live Auto deployment.
-    Returns same structure as load_pnl_for_strategy().
-    Returns empty dict if la_mapping_id is None.
+    la_mapping_id. Gracefully skips "NA", empty, or null.
     """
-    if not la_mapping_id:
+    if not la_mapping_id or str(la_mapping_id).strip().upper() in ("NA", "NONE", "NULL", ""):
         return {}
 
     try:
