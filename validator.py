@@ -333,31 +333,17 @@ def build_combo_label(
     """
     Build the human readable combo label for UI display.
 
+    If sl_pts is mathematically infinite (99999.0), bypasses
+    all parameters and returns a Pure Time Exit label.
+
     Format:
         "SL -975 | T 1300 | TSL 780 | PT 2925 | Exit 15:00"
-
-    Where:
-        SL  = sl_pts × current_lot_size (negative, shown as loss)
-        T   = tsl_activation_pts × current_lot_size
-        TSL = tsl_floor_pts × current_lot_size
-              (tsl_floor = activation - gap, the trail level
-               shown to user — not the internal gap)
-        PT  = pt_pts × current_lot_size
-
-    All INR values rounded to nearest integer for readability.
-
-    Args:
-        sl_pts:             stop loss in points
-        tsl_activation_pts: TSL activation in points
-        tsl_gap_pts:        TSL gap in points
-        pt_pts:             profit target in points
-        universal_exit_time: e.g. "15:00"
-        current_lot_size:   current lot size for INR conversion
-
-    Returns:
-        label string e.g.
-        "SL -975 | T 1300 | TSL 780 | PT 2925 | Exit 15:00"
+        OR
+        "PURE TIME EXIT | 15:00"
     """
+    if sl_pts >= 99999.0:
+        return f"PURE TIME EXIT | {universal_exit_time}"
+
     tsl_floor_pts = tsl_activation_pts - tsl_gap_pts
 
     sl_inr   = -abs(round(sl_pts * current_lot_size))
@@ -391,24 +377,6 @@ def explain_combo(
     """
     Return a full human readable explanation of a combo
     including all derived values and which rules pass/fail.
-    Useful for debugging config boundaries or understanding
-    why a specific combo was rejected.
-
-    Example output:
-        Combo explanation:
-          sl_pts            = 7.5
-          tsl_activation    = 20.0
-          tsl_gap           = 8.0
-          tsl_floor         = 12.0  (activation - gap)
-          pt_pts            = 45.0
-          universal_exit    = 15:00
-          Ordering check:   7.5 < 12.0 < 20.0 < 45.0  ✓
-          Boundaries:
-            SL floor        = 7.5   PASS
-            SL ceiling      = 20.0  PASS
-            TSL act floor   = 10.0  PASS
-            TSL gap floor   = 5.0   PASS
-          Result: VALID
     """
     tsl_floor = round(tsl_activation_pts - tsl_gap_pts,
                       POINTS_PRECISION)
@@ -462,7 +430,7 @@ def explain_combo(
         f"           {r2}\n"
         f"  R3  TSL act >= floor "
         f"{boundaries.tsl_activation_floor_pts}"
-        f"           {r3}\n"
+        f"            {r3}\n"
         f"  R3b TSL act <= ceil  "
         f"{boundaries.tsl_activation_ceiling_pts}"
         f"          {r3b}\n"
