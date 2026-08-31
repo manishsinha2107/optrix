@@ -9,7 +9,7 @@
 #   3. Extract and calculate the actual baseline PNL 
 #      and ROI% for the specific dates Optuna trained on, 
 #      allowing a true 1:1 comparison against the simulation.
-#   4. Run routine cleanup to purge data older than 2 days.
+#   4. Trigger Supabase RPC to purge data older than 2 days.
 #
 # All INR conversions happen here — this is the only place
 # in the entire engine where points are multiplied by lot
@@ -62,31 +62,29 @@ def _r(value: float, decimals: int) -> float:
 
 
 # ============================================================
-# 1. DATABASE CLEANUP (PURGE OLD RUNS)
+# 1. DATABASE CLEANUP (PURGE OLD RUNS VIA RPC)
 # ============================================================
 
 def cleanup_old_runs(client: Client, current_run_date: str) -> None:
     """
-    Deletes all rows from sim_daily and sim_combos where the 
-    run_date is older than 2 days from the current run date.
+    Triggers a Supabase RPC to instantly delete all rows from 
+    sim_daily and sim_combos where the run_date is older than 
+    2 days from the current run date, bypassing REST API timeouts.
     """
     try:
         curr_date = date.fromisoformat(current_run_date)
         threshold_date = curr_date - timedelta(days=2)
         threshold_str = threshold_date.isoformat()
 
-        logger.info(f"Running database hygiene. Purging all simulation records older than {threshold_str}...")
+        logger.info(f"Triggering database RPC hygiene for records older than {threshold_str}...")
 
-        # Delete from child table (sim_daily) first
-        client.table("sim_daily").delete().lt("run_date", threshold_str).execute()
-        
-        # Delete from parent table (sim_combos)
-        client.table("sim_combos").delete().lt("run_date", threshold_str).execute()
+        # Fire the single RPC command
+        client.rpc("purge_old_sims", {"threshold_date": threshold_str}).execute()
 
         logger.info("Database hygiene complete. Old runs successfully purged.")
     
     except Exception as e:
-        logger.error(f"Failed to clean up old runs: {e}")
+        logger.error(f"Failed to trigger RPC cleanup of old runs: {e}")
 
 
 # ============================================================
