@@ -6,10 +6,11 @@
 # Flow:
 #   1. Initialise logging and Supabase client
 #   2. Parse command line arguments for horizontal scaling (chunks)
-#   3. Load all active strategies
-#   4. Slice the strategies list based on the assigned chunk
-#   5. Load all lot size maps (once, shared across strategies)
-#   6. For each assigned active strategy:
+#   3. Trigger Database Cleanup (Purge data > 2 days old)
+#   4. Load all active strategies
+#   5. Slice the strategies list based on the assigned chunk
+#   6. Load all lot size maps (once, shared across strategies)
+#   7. For each assigned active strategy:
 #       a. Load strategy PNL data
 #       b. Compute PER_UNIT_CAPITAL and StrategyBoundaries
 #       c. Normalise all trade dates
@@ -17,7 +18,7 @@
 #       e. Run optimiser → winner
 #       f. Write winner to Supabase
 #       g. Log strategy summary
-#   7. Log full run summary
+#   8. Log full run summary
 #
 # Each strategy is completely isolated — no data, no state,
 # no metrics cross strategy boundaries.
@@ -53,7 +54,7 @@ from optimiser import (
     run_optimiser,
     log_search_space,
 )
-from db_writer import write_results
+from db_writer import write_results, cleanup_old_runs
 
 
 # ============================================================
@@ -397,6 +398,10 @@ def main() -> None:
             f"are set as GitHub Actions secrets."
         )
         sys.exit(1)
+
+    # ---- Trigger Database Cleanup (Only in Chunk 1) --------
+    if args.chunk == 1:
+        cleanup_old_runs(client, RUN_DATE)
 
     # ---- load shared data (once for all strategies) --------
     try:
