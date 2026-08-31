@@ -361,9 +361,9 @@ def run_optimiser(
     )
 
     # ---- step 3: shared state across all trials ------------
-    tracker:       RunningMinMax    = RunningMinMax()
-    trial_records: list[dict]       = []
-    counters:      dict             = {
+    tracker:        RunningMinMax    = RunningMinMax()
+    trial_records: list[dict]        = []
+    counters:      dict              = {
         "tested": 0,
         "valid":  0,
     }
@@ -422,6 +422,63 @@ def run_optimiser(
         f"Valid: {counters['valid']} | "
         f"Recorded: {len(trial_records)}"
     )
+
+    # ---- step 6.5: INJECT PURE TIME EXITS ------------------
+    logger.info(f"[Strategy {strategy_id}] Injecting Pure Time Exit combos...")
+    for univ_time in UNIVERSAL_EXIT_TIMES:
+        univ_minutes = _EXIT_TIME_MINUTES[univ_time]
+        
+        # Mathematical Infinity guarantees SL/PT/TSL never trigger
+        inf_pts = 99999.0
+        
+        train_pnl, train_win, train_exit = replay_combo_np(
+            data=train_data,
+            sl_pts=inf_pts,
+            tsl_activation_pts=inf_pts,
+            tsl_gap_pts=inf_pts,
+            pt_pts=inf_pts,
+            universal_exit_minutes=univ_minutes,
+        )
+        train_metrics = aggregate_results_np(
+            train_pnl, train_win, train_exit, per_unit_capital
+        )
+
+        val_pnl = val_win = val_exit = None
+        validation_metrics = None
+        if validation_data.n_days > 0:
+            val_pnl, val_win, val_exit = replay_combo_np(
+                data=validation_data,
+                sl_pts=inf_pts,
+                tsl_activation_pts=inf_pts,
+                tsl_gap_pts=inf_pts,
+                pt_pts=inf_pts,
+                universal_exit_minutes=univ_minutes,
+            )
+            validation_metrics = aggregate_results_np(
+                val_pnl, val_win, val_exit, per_unit_capital
+            )
+
+        tracker.update(train_metrics)
+        normalise_scores_fast(train_metrics, tracker)
+        
+        reward = compute_reward_score(
+            train_metrics=train_metrics,
+            validation_metrics=validation_metrics,
+            actual_train_roi_pct=actual_train_roi_pct,
+        )
+
+        trial_records.append({
+            "reward_score":        reward,
+            "sl_pts":              inf_pts,
+            "tsl_activation_pts":  inf_pts,
+            "tsl_gap_pts":         inf_pts,
+            "pt_pts":              inf_pts,
+            "universal_exit_time": univ_time,
+            "train_metrics":       train_metrics,
+            "validation_metrics":  validation_metrics,
+        })
+        counters["tested"] += 1
+        counters["valid"] += 1
 
     # ---- step 7: select winner -----------------------------
     if not trial_records:
