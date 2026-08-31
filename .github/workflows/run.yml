@@ -16,7 +16,6 @@
 name: Exit Optimiser
 
 on:
-
   # allow manual trigger from GitHub Actions UI
   workflow_dispatch:
     inputs:
@@ -24,6 +23,10 @@ on:
         description: "Reason for manual run (optional)"
         required: false
         default: "Manual trigger"
+
+  # allow external cron triggers via API
+  repository_dispatch:
+    types: [trigger-exit-optimiser]
 
 jobs:
   optimise:
