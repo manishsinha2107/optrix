@@ -122,14 +122,14 @@ class PreprocessedDays:
         c → 0.0    (safe for UNIVERSAL exit PNL)
         time_min → 9999  (never triggers time >= exit_time)
     """
-    h:           np.ndarray   # (n_days, max_candles) float64
-    l:           np.ndarray   # (n_days, max_candles) float64
-    c:           np.ndarray   # (n_days, max_candles) float64
-    time_min:    np.ndarray   # (n_days, max_candles) int32
-    n_candles:   np.ndarray   # (n_days,) int32
-    n_days:      int
-    max_candles: int
-    trade_dates: list
+    h:            np.ndarray   # (n_days, max_candles) float64
+    l:            np.ndarray   # (n_days, max_candles) float64
+    c:            np.ndarray   # (n_days, max_candles) float64
+    time_min:     np.ndarray   # (n_days, max_candles) int32
+    n_candles:    np.ndarray   # (n_days,) int32
+    n_days:       int
+    max_candles:  int
+    trade_dates:  list
 
 
 def preprocess_days(normalised_days: list[dict]) -> PreprocessedDays:
@@ -166,9 +166,9 @@ def preprocess_days(normalised_days: list[dict]) -> PreprocessedDays:
 
     h_arr      = np.full((n_days, max_candles), -np.inf, dtype=np.float64)
     l_arr      = np.full((n_days, max_candles),  np.inf, dtype=np.float64)
-    c_arr      = np.zeros((n_days, max_candles),         dtype=np.float64)
+    c_arr      = np.zeros((n_days, max_candles),        dtype=np.float64)
     time_arr   = np.full((n_days, max_candles), 9999,    dtype=np.int32)
-    n_candles  = np.array(candle_counts,                 dtype=np.int32)
+    n_candles  = np.array(candle_counts,                dtype=np.int32)
 
     trade_dates = []
 
@@ -203,29 +203,16 @@ def preprocess_days(normalised_days: list[dict]) -> PreprocessedDays:
 # ============================================================
 
 def replay_combo_np(
-    data:                  PreprocessedDays,
-    sl_pts:                float,
-    tsl_activation_pts:    float,
-    tsl_gap_pts:           float,
-    pt_pts:                float,
+    data:                    PreprocessedDays,
+    sl_pts:                  float,
+    tsl_activation_pts:      float,
+    tsl_gap_pts:             float,
+    pt_pts:                  float,
     universal_exit_minutes: int,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Vectorized replay of one combo across all trade dates.
-
-    Args:
-        data:                   PreprocessedDays from preprocess_days()
-        sl_pts:                 stop loss in points (positive)
-        tsl_activation_pts:     TSL activation level in points
-        tsl_gap_pts:            TSL gap in points
-        pt_pts:                 profit target in points
-        universal_exit_minutes: exit time as minutes since midnight
-
-    Returns:
-        sim_pnl:    (n_days,) float64 — PNL in points per day
-        sim_win:    (n_days,) bool    — whether each day was a win
-        exit_type:  (n_days,) int32   — exit type index
-                    0=PT, 1=SL, 2=TSL, 3=UNIVERSAL
+    Vectorized replay of one combo across all trade dates,
+    strictly restricted to valid intraday candles (ignoring padding).
     """
     if data.n_days == 0:
         return (
@@ -241,40 +228,41 @@ def replay_combo_np(
     # cumulative peak (running max of h)
     peaks = np.maximum.accumulate(data.h, axis=1)
 
-    # candle index array for masking
+    # candle index array and strict validity mask to prevent padding leakage
     candle_idx = np.arange(max_c, dtype=np.int32)[np.newaxis, :]
+    valid_mask = candle_idx < data.n_candles[:, np.newaxis]
 
-    # PROFIT TARGET: first candle where h >= pt_pts
-    pt_hit = data.h >= pt_pts
+    # PROFIT TARGET: first valid candle where h >= pt_pts
+    pt_hit = (data.h >= pt_pts) & valid_mask
     pt_any = pt_hit.any(axis=1)
     pt_idx = np.where(pt_any, np.argmax(pt_hit, axis=1), max_c)
 
-    # STOP LOSS: first candle where l <= -sl_pts
-    sl_hit = data.l <= sl_neg
+    # STOP LOSS: first valid candle where l <= -sl_pts
+    sl_hit = (data.l <= sl_neg) & valid_mask
     sl_any = sl_hit.any(axis=1)
     sl_idx = np.where(sl_any, np.argmax(sl_hit, axis=1), max_c)
 
-    # TSL ARMING: first candle where peak >= activation
-    tsl_arm_hit  = peaks >= tsl_activation_pts
+    # TSL ARMING: first valid candle where peak >= activation
+    tsl_arm_hit   = (peaks >= tsl_activation_pts) & valid_mask
     tsl_armed_any = tsl_arm_hit.any(axis=1)
-    tsl_arm_idx  = np.where(
+    tsl_arm_idx   = np.where(
         tsl_armed_any,
         np.argmax(tsl_arm_hit, axis=1),
         max_c,
     )
 
-    # TSL BREACH: l <= (peak - gap) AND candle >= arm index
-    tsl_floor   = peaks - tsl_gap_pts
-    tsl_breach  = (data.l <= tsl_floor) & (candle_idx >= tsl_arm_idx[:, np.newaxis])
+    # TSL BREACH: l <= (peak - gap) AND valid candle >= arm index
+    tsl_floor    = peaks - tsl_gap_pts
+    tsl_breach   = (data.l <= tsl_floor) & (candle_idx >= tsl_arm_idx[:, np.newaxis]) & valid_mask
     tsl_breach_any = tsl_breach.any(axis=1)
-    tsl_idx     = np.where(
+    tsl_idx      = np.where(
         tsl_breach_any,
         np.argmax(tsl_breach, axis=1),
         max_c,
     )
 
-    # UNIVERSAL EXIT: first candle where time >= exit minutes
-    univ_hit = data.time_min >= universal_exit_minutes
+    # UNIVERSAL EXIT: first valid candle where time >= exit minutes
+    univ_hit = (data.time_min >= universal_exit_minutes) & valid_mask
     univ_any = univ_hit.any(axis=1)
     last_candle_idx = np.maximum(data.n_candles - 1, 0)
     univ_idx = np.where(
@@ -307,7 +295,7 @@ def replay_combo_np(
 
     if np.any(is_univ):
         univ_days = np.where(is_univ)[0]
-        sim_pnl[is_univ] = data.c[univ_days, exit_at[is_univ]]
+        sim_pnl[is_univ] = data.c[univ_days, exit_at[univ_days]]
 
     sim_win = sim_pnl > 0
 
@@ -407,15 +395,15 @@ def _make_result(
     INR conversion is NOT done here.
     """
     return {
-        "sim_pnl_pts":       round(sim_pnl_pts, POINTS_PRECISION),
-        "sim_win":           sim_pnl_pts > 0,
-        "exit_type":         exit_type,
-        "exit_time":         exit_time,
-        "peak_pnl_pts":      round(peak_pnl_pts, POINTS_PRECISION),
-        "peak_time":         peak_time,
-        "trough_pnl_pts":    round(trough_pnl_pts, POINTS_PRECISION),
-        "trough_time":       trough_time,
-        "candles_processed": candles_processed,
+        "sim_pnl_pts":        round(sim_pnl_pts, POINTS_PRECISION),
+        "sim_win":            sim_pnl_pts > 0,
+        "exit_type":          exit_type,
+        "exit_time":          exit_time,
+        "peak_pnl_pts":       round(peak_pnl_pts, POINTS_PRECISION),
+        "peak_time":          peak_time,
+        "trough_pnl_pts":     round(trough_pnl_pts, POINTS_PRECISION),
+        "trough_time":        trough_time,
+        "candles_processed":  candles_processed,
     }
 
 
@@ -442,12 +430,12 @@ def _is_universal_exit_candle(
 # ============================================================
 
 def replay_trade(
-    candles_pts:         list[dict],
-    sl_pts:              float,
-    tsl_activation_pts:  float,
-    tsl_gap_pts:         float,
-    pt_pts:              float,
-    universal_exit_time: str,
+    candles_pts:          list[dict],
+    sl_pts:               float,
+    tsl_activation_pts:   float,
+    tsl_gap_pts:          float,
+    pt_pts:               float,
+    universal_exit_time:  str,
 ) -> dict:
     """
     Replay one trade date with one fixed combo.
