@@ -9,6 +9,7 @@
 #   3. Extract and calculate the actual baseline PNL 
 #      and ROI% for the specific dates Optuna trained on, 
 #      allowing a true 1:1 comparison against the simulation.
+#   4. Run routine cleanup to purge data older than 2 days.
 #
 # All INR conversions happen here — this is the only place
 # in the entire engine where points are multiplied by lot
@@ -27,7 +28,7 @@
 # ============================================================
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 from supabase import Client
@@ -61,7 +62,35 @@ def _r(value: float, decimals: int) -> float:
 
 
 # ============================================================
-# 1. BUILD sim_combos ROW
+# 1. DATABASE CLEANUP (PURGE OLD RUNS)
+# ============================================================
+
+def cleanup_old_runs(client: Client, current_run_date: str) -> None:
+    """
+    Deletes all rows from sim_daily and sim_combos where the 
+    run_date is older than 2 days from the current run date.
+    """
+    try:
+        curr_date = date.fromisoformat(current_run_date)
+        threshold_date = curr_date - timedelta(days=2)
+        threshold_str = threshold_date.isoformat()
+
+        logger.info(f"Running database hygiene. Purging all simulation records older than {threshold_str}...")
+
+        # Delete from child table (sim_daily) first
+        client.table("sim_daily").delete().lt("run_date", threshold_str).execute()
+        
+        # Delete from parent table (sim_combos)
+        client.table("sim_combos").delete().lt("run_date", threshold_str).execute()
+
+        logger.info("Database hygiene complete. Old runs successfully purged.")
+    
+    except Exception as e:
+        logger.error(f"Failed to clean up old runs: {e}")
+
+
+# ============================================================
+# 2. BUILD sim_combos ROW
 # ============================================================
 # Constructs the master summary record for the winning combo.
 # Now includes total_actual_pnl_inr and total_actual_roi_pct
@@ -219,15 +248,7 @@ def _build_sim_combos_row(
 
 
 # ============================================================
-# 2. BUILD sim_daily ROWS
-# ============================================================
-# Constructs the granular date-by-date records.
-# This merges the simulated results with the historical reality 
-# (actual_pnl, lot_size_on_date, historical_capital) for storage.
-# ============================================================
-
-# ============================================================
-# 2. BUILD sim_daily ROWS
+# 3. BUILD sim_daily ROWS
 # ============================================================
 
 def _build_sim_daily_rows(
@@ -354,7 +375,7 @@ def _build_sim_daily_rows(
 
 
 # ============================================================
-# 3. UPSERT sim_combos
+# 4. UPSERT sim_combos
 # ============================================================
 
 def write_sim_combos(
@@ -388,7 +409,7 @@ def write_sim_combos(
 
 
 # ============================================================
-# 4. UPSERT sim_daily
+# 5. UPSERT sim_daily
 # ============================================================
 
 def write_sim_daily(
@@ -433,7 +454,7 @@ def write_sim_daily(
 
 
 # ============================================================
-# 5. FULL WRITE PIPELINE
+# 6. FULL WRITE PIPELINE
 # ============================================================
 # Called once per strategy from main.py after optimiser completes. 
 # Calculates the baseline actuals using ONLY the dates Optuna 
