@@ -97,7 +97,7 @@ def load_active_strategies(client: Client) -> list[dict]:
     response = (
         client.table("strategies")
         .select(", ".join(STRATEGY_COLUMNS))
-        # .in_("status", ACTIVE_STATUSES)  # TEMP COMMENT: Process all strategies for backfill
+        .in_("status", ACTIVE_STATUSES)
         .in_("index_name", SUPPORTED_INSTRUMENTS)
         .execute()
     )
