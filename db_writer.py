@@ -335,7 +335,7 @@ def _build_sim_daily_rows(
             INR_PRECISION
         )
 
-        rows.append({
+        row_dict = {
             "strategy_id":        strategy_id,
             "run_date":           run_date,
             "trade_date":         trade_date,
