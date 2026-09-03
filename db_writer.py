@@ -98,6 +98,7 @@ def cleanup_old_runs(client: Client, current_run_date: str) -> None:
 def _build_sim_combos_row(
     strategy_id:          int,
     winner:               dict,
+    best_time_exit:       dict,
     train_metrics:        ComboMetrics,
     validation_metrics:   Optional[ComboMetrics],
     current_lot_size:     int,
@@ -242,6 +243,13 @@ def _build_sim_combos_row(
 
         # final reward score
         "reward_score":         _r(winner["reward_score"], 6),
+
+        # time scanner results
+        "time_exit_time":         best_time_exit.get("time_exit_time") if best_time_exit else None,
+        "time_exit_pnl_inr":      _r(pts_to_inr(best_time_exit["time_exit_pnl_pts"], current_lot_size), INR_PRECISION) if best_time_exit else None,
+        "time_exit_roi_pct":      _r(best_time_exit.get("time_exit_roi_pct"), PCT_PRECISION) if best_time_exit else None,
+        "time_exit_win_rate_pct": _r(best_time_exit.get("time_exit_win_rate_pct"), PCT_PRECISION) if best_time_exit else None,
+        "time_exit_max_dd_inr":   _r(pts_to_inr(abs(best_time_exit["time_exit_max_dd_pts"]), current_lot_size), INR_PRECISION) if best_time_exit else None,
     }
 
 
@@ -253,6 +261,7 @@ def _build_sim_daily_rows(
     strategy_id:       int,
     run_date:          str,
     winner:            dict,
+    best_time_exit:    dict,
     normalised_days:   list[dict],
     per_unit_capital:  float,
 ) -> list[dict]:
@@ -276,6 +285,7 @@ def _build_sim_daily_rows(
         all_results[result["trade_date"]] = result
 
     rows = []
+    daily_lookup = best_time_exit.get("daily_lookup", {}) if best_time_exit else {}
 
     for day in normalised_days:
         trade_date       = day["trade_date"]
@@ -325,7 +335,7 @@ def _build_sim_daily_rows(
             INR_PRECISION
         )
 
-        rows.append({
+        row_dict = {
             "strategy_id":        strategy_id,
             "run_date":           run_date,
             "trade_date":         trade_date,
@@ -367,7 +377,20 @@ def _build_sim_daily_rows(
             "peak_time":          result["peak_time"],
             "trough_pnl_inr":     trough_pnl_inr,
             "trough_time":        result["trough_time"],
-        })
+        }
+        
+        # Attach time scanner data if available
+        time_res = daily_lookup.get(trade_date)
+        if time_res:
+            row_dict["time_exit_pnl_inr"] = _r(pts_to_inr(time_res["sim_pnl_pts"], lot_size_on_date), INR_PRECISION)
+            row_dict["time_exit_roi_pct"] = _r(time_res["sim_pnl_pts"] / per_unit_capital * 100, PCT_PRECISION)
+            row_dict["time_exit_win"]     = time_res["sim_win"]
+        else:
+            row_dict["time_exit_pnl_inr"] = None
+            row_dict["time_exit_roi_pct"] = None
+            row_dict["time_exit_win"]     = None
+            
+        rows.append(row_dict)
 
     return rows
 
@@ -464,6 +487,7 @@ def write_results(
     client:           Client,
     strategy_id:      int,
     winner:           dict,
+    best_time_exit:   dict,
     normalised_days:  list[dict],
     current_lot_size: int,
     per_unit_capital: float,
@@ -501,6 +525,7 @@ def write_results(
     combos_row = _build_sim_combos_row(
         strategy_id=strategy_id,
         winner=winner,
+        best_time_exit=best_time_exit,
         train_metrics=train_metrics,
         validation_metrics=validation_metrics,
         current_lot_size=current_lot_size,
@@ -515,6 +540,7 @@ def write_results(
         strategy_id=strategy_id,
         run_date=run_date,
         winner=winner,
+        best_time_exit=best_time_exit,
         normalised_days=normalised_days,
         per_unit_capital=per_unit_capital,
     )
