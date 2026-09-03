@@ -238,13 +238,22 @@ def process_strategy(
             )
             return result_base
 
+
         result_base["combos_tested"] = winner["combos_tested"]
 
-        # ---- g. write to Supabase --------------------------
+        # ---- g1. run standalone pure time scanner ----------
+        from time_scanner import run_time_scanner
+        best_time_exit = run_time_scanner(
+            normalised_days=normalised_days,
+            per_unit_capital=per_unit_capital,
+        )
+
+        # ---- g2. write to Supabase -------------------------
         write_ok = write_results(
             client=client,
             strategy_id=strategy_id,
             winner=winner,
+            best_time_exit=best_time_exit,
             normalised_days=normalised_days,
             current_lot_size=current_lot_size,
             per_unit_capital=per_unit_capital,
